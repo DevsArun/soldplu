@@ -1,6 +1,6 @@
 <?php
 /**
- * Prices management view.
+ * Prices management view — redesigned with bulk entry.
  *
  * @package CompetitorSpyWidget
  * @since 1.0.0
@@ -33,15 +33,21 @@ $prices = $wpdb->get_results( $wpdb->prepare(
     $per_page,
     $offset
 ) );
+
+// Get competitor names for autocomplete
+$comp_names = array();
+foreach ( $competitors as $c ) {
+    $comp_names[] = $c->name;
+}
 ?>
 
 <div class="csw-admin-wrap">
     <div class="csw-admin-header">
         <div class="csw-header-left">
             <h1 class="csw-page-title"><?php esc_html_e( 'Price Comparisons', 'competitor-spy-widget' ); ?></h1>
-            <p class="csw-page-subtitle"><?php esc_html_e( 'Manage competitor prices for your products.', 'competitor-spy-widget' ); ?></p>
+            <p class="csw-page-subtitle"><?php esc_html_e( 'Add competitor prices for multiple products at once. No API needed — just type!', 'competitor-spy-widget' ); ?></p>
         </div>
-        <div class="csw-header-right">
+        <div class="csw-header-right" style="display:flex;align-items:center;gap:10px;">
             <button type="button" class="csw-btn csw-btn-outline" id="csw-import-btn">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
@@ -50,37 +56,96 @@ $prices = $wpdb->get_results( $wpdb->prepare(
                 </svg>
                 <?php esc_html_e( 'Import CSV', 'competitor-spy-widget' ); ?>
             </button>
-            <button type="button" class="csw-btn csw-btn-primary" id="csw-add-price-btn">
+            <button type="button" class="csw-btn csw-btn-primary" id="csw-show-bulk-add">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="12" y1="5" x2="12" y2="19"/>
                     <line x1="5" y1="12" x2="19" y2="12"/>
                 </svg>
-                <?php esc_html_e( 'Add Price', 'competitor-spy-widget' ); ?>
+                <?php esc_html_e( 'Bulk Add Prices', 'competitor-spy-widget' ); ?>
             </button>
         </div>
     </div>
 
-    <?php if ( empty( $competitors ) ) : ?>
-    <div class="csw-notice csw-notice-warning">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"/>
-            <line x1="12" y1="8" x2="12" y2="12"/>
-            <line x1="12" y1="16" x2="12.01" y2="16"/>
-        </svg>
-        <p>
-            <?php
-            printf(
-                /* translators: %s: link to competitors page */
-                esc_html__( 'You need to add at least one competitor first. %s', 'competitor-spy-widget' ),
-                '<a href="' . esc_url( admin_url( 'admin.php?page=csw-competitors' ) ) . '">' . esc_html__( 'Add a competitor', 'competitor-spy-widget' ) . '</a>'
-            );
-            ?>
-        </p>
-    </div>
-    <?php endif; ?>
+    <!-- BULK ADD SECTION -->
+    <div class="csw-card" id="csw-bulk-add-section" style="margin-bottom:20px; display:none;">
+        <div class="csw-card-header">
+            <h3><?php esc_html_e( 'Quick Bulk Add — No API Needed', 'competitor-spy-widget' ); ?></h3>
+            <button type="button" class="csw-btn csw-btn-sm csw-btn-outline" id="csw-hide-bulk-add"><?php esc_html_e( 'Close', 'competitor-spy-widget' ); ?></button>
+        </div>
+        <div class="csw-card-body">
+            <p style="font-size:13px; color:#6B7280; margin:0 0 16px;">
+                <?php esc_html_e( 'Search for a product, type the competitor name and price. Click "Save All" when done. Competitors are created automatically.', 'competitor-spy-widget' ); ?>
+            </p>
 
-    <!-- Prices Table -->
+            <form id="csw-bulk-price-form">
+                <table class="csw-table" id="csw-bulk-table" style="border:1px solid #E5E7EB;">
+                    <thead>
+                        <tr>
+                            <th style="width:30%;"><?php esc_html_e( 'Product', 'competitor-spy-widget' ); ?></th>
+                            <th style="width:20%;"><?php esc_html_e( 'Competitor Name', 'competitor-spy-widget' ); ?></th>
+                            <th style="width:15%;"><?php esc_html_e( 'Their Price', 'competitor-spy-widget' ); ?> (<?php echo esc_html( get_woocommerce_currency_symbol() ); ?>)</th>
+                            <th style="width:25%;"><?php esc_html_e( 'URL (optional)', 'competitor-spy-widget' ); ?></th>
+                            <th style="width:10%;"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="csw-bulk-rows">
+                        <?php for ( $i = 0; $i < 5; $i++ ) : ?>
+                        <tr class="csw-bulk-row">
+                            <td style="padding:8px;">
+                                <select name="bulk_prices[<?php echo esc_attr( $i ); ?>][product_id]" class="csw-form-select csw-bulk-product-search" data-placeholder="<?php esc_attr_e( 'Search product...', 'competitor-spy-widget' ); ?>">
+                                </select>
+                            </td>
+                            <td style="padding:8px;">
+                                <input type="text" name="bulk_prices[<?php echo esc_attr( $i ); ?>][competitor_name]" placeholder="<?php esc_attr_e( 'e.g. Amazon', 'competitor-spy-widget' ); ?>" list="csw-bulk-comp-list" class="csw-form-input" />
+                            </td>
+                            <td style="padding:8px;">
+                                <input type="number" name="bulk_prices[<?php echo esc_attr( $i ); ?>][competitor_price]" step="0.01" min="0" placeholder="0.00" class="csw-form-input" />
+                            </td>
+                            <td style="padding:8px;">
+                                <input type="url" name="bulk_prices[<?php echo esc_attr( $i ); ?>][competitor_url]" placeholder="https://..." class="csw-form-input" />
+                            </td>
+                            <td style="padding:8px; text-align:center;">
+                                <button type="button" class="csw-btn-icon csw-remove-bulk-row" title="<?php esc_attr_e( 'Remove', 'competitor-spy-widget' ); ?>">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                </button>
+                            </td>
+                        </tr>
+                        <?php endfor; ?>
+                    </tbody>
+                </table>
+
+                <datalist id="csw-bulk-comp-list">
+                    <?php foreach ( $comp_names as $name ) : ?>
+                    <option value="<?php echo esc_attr( $name ); ?>">
+                    <?php endforeach; ?>
+                    <option value="Amazon">
+                    <option value="Flipkart">
+                    <option value="Walmart">
+                    <option value="eBay">
+                    <option value="Target">
+                    <option value="Best Buy">
+                    <option value="AliExpress">
+                </datalist>
+
+                <div style="margin-top:12px; display:flex; gap:10px; align-items:center;">
+                    <button type="button" class="csw-btn csw-btn-outline" id="csw-add-bulk-row">
+                        + <?php esc_html_e( 'Add More Rows', 'competitor-spy-widget' ); ?>
+                    </button>
+                    <button type="submit" class="csw-btn csw-btn-primary" id="csw-save-bulk-prices">
+                        <span class="csw-btn-text"><?php esc_html_e( 'Save All Prices', 'competitor-spy-widget' ); ?></span>
+                        <span class="csw-btn-loading" style="display:none;"><?php esc_html_e( 'Saving...', 'competitor-spy-widget' ); ?></span>
+                    </button>
+                    <span id="csw-bulk-status" style="font-size:13px; color:#10B981; display:none;">✓ <?php esc_html_e( 'Saved!', 'competitor-spy-widget' ); ?></span>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- EXISTING PRICES TABLE -->
     <div class="csw-card">
+        <div class="csw-card-header">
+            <h3><?php esc_html_e( 'All Price Entries', 'competitor-spy-widget' ); ?> <span style="font-weight:400; color:#6B7280;">(<?php echo esc_html( $total_items ); ?>)</span></h3>
+        </div>
         <div class="csw-card-body csw-no-padding">
             <?php if ( empty( $prices ) ) : ?>
             <div class="csw-empty-state csw-empty-compact">
@@ -91,7 +156,10 @@ $prices = $wpdb->get_results( $wpdb->prepare(
                     </svg>
                 </div>
                 <h3><?php esc_html_e( 'No Price Entries Yet', 'competitor-spy-widget' ); ?></h3>
-                <p><?php esc_html_e( 'Add competitor prices for your products to enable the comparison widget.', 'competitor-spy-widget' ); ?></p>
+                <p><?php esc_html_e( 'Use "Bulk Add Prices" above or go to any product → "Competitor Prices" tab to add prices.', 'competitor-spy-widget' ); ?></p>
+                <button type="button" class="csw-btn csw-btn-primary" onclick="document.getElementById('csw-show-bulk-add').click();">
+                    <?php esc_html_e( 'Add Your First Prices', 'competitor-spy-widget' ); ?>
+                </button>
             </div>
             <?php else : ?>
             <table class="csw-table">
@@ -103,7 +171,6 @@ $prices = $wpdb->get_results( $wpdb->prepare(
                         <th><?php esc_html_e( 'Their Price', 'competitor-spy-widget' ); ?></th>
                         <th><?php esc_html_e( 'Status', 'competitor-spy-widget' ); ?></th>
                         <th><?php esc_html_e( 'Savings', 'competitor-spy-widget' ); ?></th>
-                        <th><?php esc_html_e( 'Last Updated', 'competitor-spy-widget' ); ?></th>
                         <th><?php esc_html_e( 'Actions', 'competitor-spy-widget' ); ?></th>
                     </tr>
                 </thead>
@@ -115,16 +182,10 @@ $prices = $wpdb->get_results( $wpdb->prepare(
                     <tr data-price-id="<?php echo esc_attr( $price->id ); ?>">
                         <td>
                             <div class="csw-product-cell">
-                                <?php
-                                $image_url = wp_get_attachment_image_url( $product->get_image_id(), 'thumbnail' );
-                                if ( $image_url ) :
-                                ?>
-                                <img src="<?php echo esc_url( $image_url ); ?>" alt="" class="csw-product-thumb" />
-                                <?php endif; ?>
+                                <?php $img = wp_get_attachment_image_url( $product->get_image_id(), 'thumbnail' ); ?>
+                                <?php if ( $img ) : ?><img src="<?php echo esc_url( $img ); ?>" alt="" class="csw-product-thumb" /><?php endif; ?>
                                 <div>
-                                    <a href="<?php echo esc_url( get_edit_post_link( $price->product_id ) ); ?>" class="csw-product-name">
-                                        <?php echo esc_html( $product->get_name() ); ?>
-                                    </a>
+                                    <a href="<?php echo esc_url( get_edit_post_link( $price->product_id ) ); ?>" class="csw-product-name"><?php echo esc_html( $product->get_name() ); ?></a>
                                     <span class="csw-product-sku">#<?php echo esc_html( $price->product_id ); ?></span>
                                 </div>
                             </div>
@@ -154,23 +215,12 @@ $prices = $wpdb->get_results( $wpdb->prepare(
                             <?php endif; ?>
                         </td>
                         <td>
-                            <span class="csw-date-cell"><?php echo esc_html( human_time_diff( strtotime( $price->updated_at ) ) ); ?> <?php esc_html_e( 'ago', 'competitor-spy-widget' ); ?></span>
-                        </td>
-                        <td>
-                            <div class="csw-table-actions">
-                                <button type="button" class="csw-btn-icon csw-edit-price" data-id="<?php echo esc_attr( $price->id ); ?>" title="<?php esc_attr_e( 'Edit', 'competitor-spy-widget' ); ?>">
-                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-                                        <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
-                                        <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                                    </svg>
-                                </button>
-                                <button type="button" class="csw-btn-icon csw-btn-icon-danger csw-delete-price" data-id="<?php echo esc_attr( $price->id ); ?>" title="<?php esc_attr_e( 'Delete', 'competitor-spy-widget' ); ?>">
-                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-                                        <polyline points="3 6 5 6 21 6"/>
-                                        <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-                                    </svg>
-                                </button>
-                            </div>
+                            <button type="button" class="csw-btn-icon csw-btn-icon-danger csw-delete-price" data-id="<?php echo esc_attr( $price->id ); ?>" title="<?php esc_attr_e( 'Delete', 'competitor-spy-widget' ); ?>">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="3 6 5 6 21 6"/>
+                                    <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                                </svg>
+                            </button>
                         </td>
                     </tr>
                     <?php endforeach; ?>
@@ -180,64 +230,11 @@ $prices = $wpdb->get_results( $wpdb->prepare(
             <?php if ( $total_pages > 1 ) : ?>
             <div class="csw-pagination">
                 <?php for ( $i = 1; $i <= $total_pages; $i++ ) : ?>
-                <a href="<?php echo esc_url( add_query_arg( 'paged', $i ) ); ?>" class="csw-page-btn <?php echo $i === $current_page ? 'active' : ''; ?>">
-                    <?php echo esc_html( $i ); ?>
-                </a>
+                <a href="<?php echo esc_url( add_query_arg( 'paged', $i ) ); ?>" class="csw-page-btn <?php echo $i === $current_page ? 'active' : ''; ?>"><?php echo esc_html( $i ); ?></a>
                 <?php endfor; ?>
             </div>
             <?php endif; ?>
             <?php endif; ?>
-        </div>
-    </div>
-
-    <!-- Add/Edit Price Modal -->
-    <div class="csw-modal" id="csw-price-modal" style="display:none;">
-        <div class="csw-modal-overlay"></div>
-        <div class="csw-modal-content">
-            <div class="csw-modal-header">
-                <h3><?php esc_html_e( 'Add Competitor Price', 'competitor-spy-widget' ); ?></h3>
-                <button type="button" class="csw-modal-close">&times;</button>
-            </div>
-            <form id="csw-price-form">
-                <div class="csw-modal-body">
-                    <div class="csw-form-group">
-                        <label for="csw-price-product" class="csw-form-label"><?php esc_html_e( 'Product', 'competitor-spy-widget' ); ?> <span class="required">*</span></label>
-                        <select id="csw-price-product" name="product_id" class="csw-form-select csw-product-search" data-placeholder="<?php esc_attr_e( 'Search for a product...', 'competitor-spy-widget' ); ?>">
-                        </select>
-                    </div>
-
-                    <div class="csw-form-group">
-                        <label for="csw-price-competitor" class="csw-form-label"><?php esc_html_e( 'Competitor', 'competitor-spy-widget' ); ?> <span class="required">*</span></label>
-                        <select id="csw-price-competitor" name="competitor_id" class="csw-form-select">
-                            <option value=""><?php esc_html_e( 'Select a competitor', 'competitor-spy-widget' ); ?></option>
-                            <?php foreach ( $competitors as $comp ) : ?>
-                            <option value="<?php echo esc_attr( $comp->id ); ?>"><?php echo esc_html( $comp->name ); ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-
-                    <div class="csw-form-group">
-                        <label for="csw-price-amount" class="csw-form-label"><?php esc_html_e( 'Competitor Price', 'competitor-spy-widget' ); ?> <span class="required">*</span></label>
-                        <div class="csw-input-group">
-                            <span class="csw-input-prefix"><?php echo esc_html( get_woocommerce_currency_symbol() ); ?></span>
-                            <input type="number" id="csw-price-amount" name="competitor_price" class="csw-form-input" step="0.01" min="0" placeholder="0.00" required />
-                        </div>
-                    </div>
-
-                    <div class="csw-form-group">
-                        <label for="csw-price-url" class="csw-form-label"><?php esc_html_e( 'Product URL at Competitor', 'competitor-spy-widget' ); ?></label>
-                        <input type="url" id="csw-price-url" name="competitor_url" class="csw-form-input" placeholder="https://www.competitor.com/product-page" />
-                        <p class="csw-form-help"><?php esc_html_e( 'Optional. Link to the product on the competitor\'s website.', 'competitor-spy-widget' ); ?></p>
-                    </div>
-                </div>
-                <div class="csw-modal-footer">
-                    <button type="button" class="csw-btn csw-btn-outline csw-modal-cancel"><?php esc_html_e( 'Cancel', 'competitor-spy-widget' ); ?></button>
-                    <button type="submit" class="csw-btn csw-btn-primary">
-                        <span class="csw-btn-text"><?php esc_html_e( 'Save Price', 'competitor-spy-widget' ); ?></span>
-                        <span class="csw-btn-loading" style="display:none;"><?php esc_html_e( 'Saving...', 'competitor-spy-widget' ); ?></span>
-                    </button>
-                </div>
-            </form>
         </div>
     </div>
 
@@ -251,10 +248,10 @@ $prices = $wpdb->get_results( $wpdb->prepare(
             </div>
             <form id="csw-import-form" enctype="multipart/form-data">
                 <div class="csw-modal-body">
-                    <div class="csw-import-info">
-                        <p><?php esc_html_e( 'Upload a CSV file with the following columns:', 'competitor-spy-widget' ); ?></p>
-                        <code>product_id, competitor_id, competitor_price, competitor_url</code>
-                        <p class="csw-form-help"><?php esc_html_e( 'The first row should be headers. competitor_url is optional.', 'competitor-spy-widget' ); ?></p>
+                    <div style="background:#F9FAFB; border:1px solid #E5E7EB; border-radius:8px; padding:14px; margin-bottom:16px;">
+                        <p style="margin:0 0 8px; font-size:13px; font-weight:500;"><?php esc_html_e( 'CSV Format (4 columns):', 'competitor-spy-widget' ); ?></p>
+                        <code style="font-size:12px;">product_id, competitor_name, competitor_price, competitor_url</code>
+                        <p style="font-size:11px; color:#6B7280; margin:8px 0 0;"><?php esc_html_e( 'First row = headers. competitor_url is optional. Competitors are created automatically.', 'competitor-spy-widget' ); ?></p>
                     </div>
                     <div class="csw-form-group">
                         <label for="csw-csv-file" class="csw-form-label"><?php esc_html_e( 'CSV File', 'competitor-spy-widget' ); ?></label>
@@ -272,3 +269,120 @@ $prices = $wpdb->get_results( $wpdb->prepare(
         </div>
     </div>
 </div>
+
+<script>
+jQuery(function($) {
+    var bulkRowCount = 5;
+
+    // Toggle bulk add
+    $('#csw-show-bulk-add').on('click', function() {
+        $('#csw-bulk-add-section').slideDown(200);
+    });
+    $('#csw-hide-bulk-add').on('click', function() {
+        $('#csw-bulk-add-section').slideUp(200);
+    });
+
+    // Add more bulk rows
+    $('#csw-add-bulk-row').on('click', function() {
+        for (var i = 0; i < 3; i++) {
+            var row = '<tr class="csw-bulk-row">' +
+                '<td style="padding:8px;"><select name="bulk_prices[' + bulkRowCount + '][product_id]" class="csw-form-select csw-bulk-product-search" data-placeholder="Search product..."></select></td>' +
+                '<td style="padding:8px;"><input type="text" name="bulk_prices[' + bulkRowCount + '][competitor_name]" placeholder="e.g. Amazon" list="csw-bulk-comp-list" class="csw-form-input"></td>' +
+                '<td style="padding:8px;"><input type="number" name="bulk_prices[' + bulkRowCount + '][competitor_price]" step="0.01" min="0" placeholder="0.00" class="csw-form-input"></td>' +
+                '<td style="padding:8px;"><input type="url" name="bulk_prices[' + bulkRowCount + '][competitor_url]" placeholder="https://..." class="csw-form-input"></td>' +
+                '<td style="padding:8px;text-align:center;"><button type="button" class="csw-btn-icon csw-remove-bulk-row"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></td>' +
+                '</tr>';
+            $('#csw-bulk-rows').append(row);
+            bulkRowCount++;
+        }
+        initProductSearch();
+    });
+
+    // Remove bulk row
+    $(document).on('click', '.csw-remove-bulk-row', function() {
+        $(this).closest('tr').remove();
+    });
+
+    // Init Select2 for product search
+    function initProductSearch() {
+        if ($.fn.select2) {
+            $('.csw-bulk-product-search:not(.select2-hidden-accessible)').select2({
+                ajax: {
+                    url: cswAdmin.ajaxUrl,
+                    dataType: 'json',
+                    delay: 300,
+                    data: function(params) {
+                        return { action: 'csw_search_products', nonce: cswAdmin.nonce, term: params.term };
+                    },
+                    processResults: function(data) { return { results: data }; }
+                },
+                minimumInputLength: 2,
+                placeholder: 'Search product...',
+                allowClear: true,
+                width: '100%'
+            });
+        }
+    }
+    initProductSearch();
+
+    // Save bulk prices
+    $('#csw-bulk-price-form').on('submit', function(e) {
+        e.preventDefault();
+
+        var $btn = $('#csw-save-bulk-prices');
+        $btn.find('.csw-btn-text').hide();
+        $btn.find('.csw-btn-loading').show();
+        $('#csw-bulk-status').hide();
+
+        var entries = [];
+        $('.csw-bulk-row').each(function() {
+            var $row = $(this);
+            var productId = $row.find('[name$="[product_id]"]').val();
+            var compName = $row.find('[name$="[competitor_name]"]').val();
+            var compPrice = $row.find('[name$="[competitor_price]"]').val();
+            var compUrl = $row.find('[name$="[competitor_url]"]').val();
+
+            if (productId && compName && compPrice && parseFloat(compPrice) > 0) {
+                entries.push({
+                    product_id: productId,
+                    competitor_name: compName,
+                    competitor_price: compPrice,
+                    competitor_url: compUrl || ''
+                });
+            }
+        });
+
+        if (entries.length === 0) {
+            alert('<?php echo esc_js( __( 'Please fill at least one complete row (product + competitor + price).', 'competitor-spy-widget' ) ); ?>');
+            $btn.find('.csw-btn-text').show();
+            $btn.find('.csw-btn-loading').hide();
+            return;
+        }
+
+        $.ajax({
+            url: cswAdmin.ajaxUrl,
+            type: 'POST',
+            data: {
+                action: 'csw_bulk_save_prices',
+                nonce: cswAdmin.nonce,
+                entries: entries
+            },
+            success: function(response) {
+                if (response.success) {
+                    $('#csw-bulk-status').show();
+                    setTimeout(function() { location.reload(); }, 1000);
+                } else {
+                    alert(response.data.message || 'Error saving prices.');
+                }
+            },
+            error: function() {
+                alert('<?php echo esc_js( __( 'Network error. Please try again.', 'competitor-spy-widget' ) ); ?>');
+            },
+            complete: function() {
+                $btn.find('.csw-btn-text').show();
+                $btn.find('.csw-btn-loading').hide();
+            }
+        });
+    });
+});
+</script>

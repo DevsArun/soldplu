@@ -272,14 +272,14 @@ class CSW_Admin {
     public function product_data_panel() {
         global $post;
         $product_id = $post->ID;
-        $competitors = CSW_Database::get_competitors( true );
         $prices = CSW_Database::get_product_prices( $product_id );
 
         include CSW_PLUGIN_DIR . 'admin/views/product-panel.php';
     }
 
     /**
-     * Save product data.
+     * Save product data — new simplified approach.
+     * User just types competitor name + price. We auto-create competitors.
      *
      * @param int $product_id Product ID.
      */
@@ -292,7 +292,6 @@ class CSW_Admin {
             return;
         }
 
-        // Get the product's current price
         $product = wc_get_product( $product_id );
         if ( ! $product ) {
             return;
@@ -300,32 +299,108 @@ class CSW_Admin {
 
         $our_price = CSW_Price_Engine::get_product_price( $product );
 
-        // Save competitor prices
-        if ( isset( $_POST['csw_competitor_prices'] ) && is_array( $_POST['csw_competitor_prices'] ) ) {
-            $prices = array_map( 'sanitize_text_field', wp_unslash( $_POST['csw_competitor_prices'] ) );
-            $urls = isset( $_POST['csw_competitor_urls'] ) ? array_map( 'esc_url_raw', wp_unslash( $_POST['csw_competitor_urls'] ) ) : array();
+        // First, deactivate all existing prices for this product (we'll re-add active ones)
+        global $wpdb;
+        $prices_table = $wpdb->prefix . 'csw_prices';
+        $wpdb->update(
+            $prices_table,
+            array( 'is_active' => 0 ),
+            array( 'product_id' => $product_id ),
+            array( '%d' ),
+            array( '%d' )
+        );
 
-            foreach ( $prices as $competitor_id => $price ) {
-                if ( empty( $price ) || ! is_numeric( $price ) ) {
+        // Process new price entries
+        if ( isset( $_POST['csw_prices'] ) && is_array( $_POST['csw_prices'] ) ) {
+            $entries = wp_unslash( $_POST['csw_prices'] ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+
+            foreach ( $entries as $entry ) {
+                $comp_name  = isset( $entry['name'] ) ? sanitize_text_field( $entry['name'] ) : '';
+                $comp_price = isset( $entry['price'] ) ? floatval( $entry['price'] ) : 0;
+                $comp_url   = isset( $entry['url'] ) ? esc_url_raw( $entry['url'] ) : '';
+
+                // Skip empty rows
+                if ( empty( $comp_name ) || $comp_price <= 0 ) {
                     continue;
                 }
 
+                // Find or create the competitor
+                $competitor_id = $this->find_or_create_competitor( $comp_name );
+
+                if ( ! $competitor_id ) {
+                    continue;
+                }
+
+                // Save the price
                 CSW_Database::upsert_price( array(
                     'product_id'       => $product_id,
-                    'competitor_id'    => absint( $competitor_id ),
-                    'competitor_price' => floatval( $price ),
+                    'competitor_id'    => $competitor_id,
+                    'competitor_price' => $comp_price,
                     'our_price'        => $our_price,
-                    'competitor_url'   => isset( $urls[ $competitor_id ] ) ? $urls[ $competitor_id ] : '',
+                    'competitor_url'   => $comp_url,
                     'source'           => 'manual',
                 ) );
 
                 // Record history
-                CSW_Database::record_price_history( $product_id, absint( $competitor_id ), floatval( $price ), $our_price );
+                CSW_Database::record_price_history( $product_id, $competitor_id, $comp_price, $our_price );
             }
         }
 
         // Clear cache
         CSW_Cache::delete_product_comparison( $product_id );
+    }
+
+    /**
+     * Find competitor by name or auto-create if not exists.
+     *
+     * @param string $name Competitor name.
+     * @return int|false Competitor ID.
+     */
+    private function find_or_create_competitor( $name ) {
+        global $wpdb;
+        $table = $wpdb->prefix . 'csw_competitors';
+
+        // Try to find existing competitor by name (case-insensitive)
+        $existing = $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT id FROM {$table} WHERE LOWER(name) = LOWER(%s) LIMIT 1", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+                $name
+            )
+        );
+
+        if ( $existing ) {
+            return (int) $existing;
+        }
+
+        // Auto-create competitor
+        $slug = sanitize_title( $name );
+
+        // Check if we have a built-in logo for known competitors
+        $logo_url = '';
+        $known_logos = array(
+            'amazon'    => CSW_PLUGIN_URL . 'public/assets/images/competitors/amazon.svg',
+            'walmart'   => CSW_PLUGIN_URL . 'public/assets/images/competitors/walmart.svg',
+            'ebay'      => CSW_PLUGIN_URL . 'public/assets/images/competitors/ebay.svg',
+            'target'    => CSW_PLUGIN_URL . 'public/assets/images/competitors/target.svg',
+            'best-buy'  => CSW_PLUGIN_URL . 'public/assets/images/competitors/bestbuy.svg',
+            'bestbuy'   => CSW_PLUGIN_URL . 'public/assets/images/competitors/bestbuy.svg',
+        );
+
+        if ( isset( $known_logos[ $slug ] ) ) {
+            $logo_url = $known_logos[ $slug ];
+        }
+
+        $id = CSW_Database::insert_competitor( array(
+            'name'        => $name,
+            'slug'        => $slug,
+            'website_url' => '',
+            'logo_url'    => $logo_url,
+            'api_type'    => 'manual',
+            'is_active'   => 1,
+            'priority'    => 0,
+        ) );
+
+        return $id ? $id : false;
     }
 
     /**

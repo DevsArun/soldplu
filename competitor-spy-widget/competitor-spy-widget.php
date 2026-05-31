@@ -117,8 +117,23 @@ final class Competitor_Spy_Widget {
         add_action( 'plugins_loaded', array( $this, 'on_plugins_loaded' ) );
         add_action( 'admin_notices', array( $this, 'check_woocommerce' ) );
 
+        // Initialize widget display after WooCommerce is loaded
+        add_action( 'woocommerce_init', array( $this, 'init_widget_display' ) );
+
+        // Fallback: also try on init with low priority if woocommerce_init didn't fire
+        add_action( 'wp', array( $this, 'init_widget_display' ) );
+
         // HPOS compatibility
         add_action( 'before_woocommerce_init', array( $this, 'declare_hpos_compatibility' ) );
+    }
+
+    /**
+     * Initialize the frontend widget display.
+     */
+    public function init_widget_display() {
+        if ( class_exists( 'CSW_Widget_Display' ) ) {
+            CSW_Widget_Display::init();
+        }
     }
 
     /**

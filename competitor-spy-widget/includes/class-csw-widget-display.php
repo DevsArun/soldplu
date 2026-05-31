@@ -18,35 +18,50 @@ if ( ! defined( 'ABSPATH' ) ) {
 class CSW_Widget_Display {
 
     /**
-     * Constructor.
+     * Whether hooks have been registered.
+     *
+     * @var bool
      */
-    public function __construct() {
-        if ( ! CSW_Settings::is_enabled() ) {
+    private static $hooks_registered = false;
+
+    /**
+     * Initialize widget display (called once).
+     */
+    public static function init() {
+        if ( self::$hooks_registered ) {
             return;
         }
 
-        add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) );
-        $this->register_widget_hook();
-    }
+        self::$hooks_registered = true;
 
-    /**
-     * Register the widget display hook based on settings.
-     */
-    private function register_widget_hook() {
-        $hook_config = CSW_Settings::get_widget_hook();
-        add_action( $hook_config['hook'], array( $this, 'render_widget' ), $hook_config['priority'] );
+        // Register AJAX handlers (always, for both logged-in and guests)
+        add_action( 'wp_ajax_csw_get_widget', array( __CLASS__, 'ajax_get_widget' ) );
+        add_action( 'wp_ajax_nopriv_csw_get_widget', array( __CLASS__, 'ajax_get_widget' ) );
+        add_action( 'wp_ajax_csw_track_event', array( __CLASS__, 'ajax_track_event' ) );
+        add_action( 'wp_ajax_nopriv_csw_track_event', array( __CLASS__, 'ajax_track_event' ) );
+
+        // Only register frontend hooks if not admin (but AJAX is ok)
+        if ( ! is_admin() ) {
+            if ( CSW_Settings::is_enabled() ) {
+                add_action( 'wp_enqueue_scripts', array( __CLASS__, 'enqueue_assets' ) );
+
+                // Register widget render hook
+                $hook_config = CSW_Settings::get_widget_hook();
+                add_action( $hook_config['hook'], array( __CLASS__, 'render_widget' ), $hook_config['priority'] );
+            }
+        }
     }
 
     /**
      * Enqueue frontend assets.
      */
-    public function enqueue_assets() {
-        if ( ! is_product() ) {
+    public static function enqueue_assets() {
+        if ( ! function_exists( 'is_product' ) || ! is_product() ) {
             return;
         }
 
         global $post;
-        if ( CSW_Settings::is_product_excluded( $post->ID ) ) {
+        if ( ! $post || CSW_Settings::is_product_excluded( $post->ID ) ) {
             return;
         }
 
@@ -97,10 +112,17 @@ class CSW_Widget_Display {
     }
 
     /**
-     * Render the comparison widget.
+     * Render the comparison widget on product page.
      */
-    public function render_widget() {
+    public static function render_widget() {
         global $product;
+
+        if ( ! $product || ! is_a( $product, 'WC_Product' ) ) {
+            global $post;
+            if ( $post ) {
+                $product = wc_get_product( $post->ID );
+            }
+        }
 
         if ( ! $product ) {
             return;
@@ -113,20 +135,20 @@ class CSW_Widget_Display {
             return;
         }
 
-        // Check if lazy loading
+        // Check if lazy loading is enabled
         if ( '1' === CSW_Settings::get( 'lazy_load', '1' ) ) {
-            $this->render_placeholder( $product_id );
+            self::render_placeholder( $product_id );
             return;
         }
 
-        // Get comparison data
+        // Direct render (non-lazy)
         $comparison = CSW_Price_Engine::get_comparison( $product_id );
 
         if ( ! $comparison || ! $comparison['show_widget'] ) {
             return;
         }
 
-        $this->render_comparison_html( $comparison );
+        self::render_comparison_html( $comparison );
     }
 
     /**
@@ -134,7 +156,7 @@ class CSW_Widget_Display {
      *
      * @param int $product_id Product ID.
      */
-    private function render_placeholder( $product_id ) {
+    private static function render_placeholder( $product_id ) {
         ?>
         <div class="csw-widget-container" 
              data-product-id="<?php echo esc_attr( $product_id ); ?>"
@@ -154,186 +176,7 @@ class CSW_Widget_Display {
      *
      * @param array $comparison Comparison data.
      */
-    private function render_comparison_html( $comparison ) {
-        $widget_style = CSW_Settings::get( 'widget_style', 'modern' );
-        $show_savings = '1' === CSW_Settings::get( 'show_savings', '1' );
-        $show_logos   = '1' === CSW_Settings::get( 'show_competitor_logo', '1' );
-        $animated     = '1' === CSW_Settings::get( 'animation_enabled', '1' );
-        $widget_title = CSW_Settings::get( 'widget_title', __( 'Price Comparison', 'competitor-spy-widget' ) );
-        $badge_text   = CSW_Settings::get( 'badge_text', __( 'Best Price', 'competitor-spy-widget' ) );
-        $savings_label = CSW_Settings::get( 'savings_label', __( 'You save', 'competitor-spy-widget' ) );
-
-        $widget_classes = array(
-            'csw-widget-container',
-            'csw-style-' . esc_attr( $widget_style ),
-        );
-
-        if ( $animated ) {
-            $widget_classes[] = 'csw-animated';
-        }
-        ?>
-        <div class="<?php echo esc_attr( implode( ' ', $widget_classes ) ); ?>"
-             data-product-id="<?php echo esc_attr( $comparison['product_id'] ); ?>"
-             role="complementary"
-             aria-label="<?php esc_attr_e( 'Price comparison', 'competitor-spy-widget' ); ?>">
-
-            <!-- Widget Header -->
-            <div class="csw-widget-header">
-                <div class="csw-widget-title">
-                    <svg class="csw-icon-compare" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>
-                    </svg>
-                    <span><?php echo esc_html( $widget_title ); ?></span>
-                </div>
-                <?php if ( $comparison['best_savings'] > 0 ) : ?>
-                <div class="csw-badge csw-badge-winning">
-                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="20 6 9 17 4 12"/>
-                    </svg>
-                    <span><?php echo esc_html( $badge_text ); ?></span>
-                </div>
-                <?php endif; ?>
-            </div>
-
-            <!-- Price Comparisons -->
-            <div class="csw-comparisons">
-                <!-- Our Price Row -->
-                <div class="csw-price-row csw-price-ours csw-winning">
-                    <div class="csw-row-left">
-                        <div class="csw-store-indicator csw-store-ours"></div>
-                        <div class="csw-store-info">
-                            <span class="csw-store-name"><?php esc_html_e( 'This Store', 'competitor-spy-widget' ); ?></span>
-                            <span class="csw-store-tag"><?php esc_html_e( 'You\'re here', 'competitor-spy-widget' ); ?></span>
-                        </div>
-                    </div>
-                    <div class="csw-row-right">
-                        <span class="csw-price csw-price-highlight">
-                            <?php echo wp_kses_post( wc_price( $comparison['our_price'] ) ); ?>
-                        </span>
-                    </div>
-                </div>
-
-                <!-- Competitor Price Rows -->
-                <?php foreach ( $comparison['competitors'] as $index => $competitor ) : ?>
-                <div class="csw-price-row csw-price-competitor" data-competitor="<?php echo esc_attr( $competitor['slug'] ); ?>">
-                    <div class="csw-row-left">
-                        <?php if ( $show_logos && ! empty( $competitor['logo'] ) ) : ?>
-                        <img class="csw-competitor-logo" 
-                             src="<?php echo esc_url( $competitor['logo'] ); ?>" 
-                             alt="<?php echo esc_attr( $competitor['name'] ); ?>"
-                             width="24" height="24"
-                             loading="lazy" />
-                        <?php else : ?>
-                        <div class="csw-store-indicator csw-store-competitor"></div>
-                        <?php endif; ?>
-                        <div class="csw-store-info">
-                            <span class="csw-store-name"><?php echo esc_html( $competitor['name'] ); ?></span>
-                            <?php if ( $competitor['is_cheaper'] && $show_savings ) : ?>
-                            <span class="csw-savings-tag">
-                                <?php
-                                printf(
-                                    /* translators: %s: savings percentage */
-                                    esc_html__( '%s%% more expensive', 'competitor-spy-widget' ),
-                                    esc_html( number_format( $competitor['savings_percent'], 0 ) )
-                                );
-                                ?>
-                            </span>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                    <div class="csw-row-right">
-                        <span class="csw-price csw-price-competitor-value">
-                            <?php echo wp_kses_post( wc_price( $competitor['price'] ) ); ?>
-                        </span>
-                    </div>
-                </div>
-                <?php endforeach; ?>
-            </div>
-
-            <!-- Savings Summary -->
-            <?php if ( $show_savings && $comparison['best_savings'] > 0 ) : ?>
-            <div class="csw-savings-summary">
-                <div class="csw-savings-icon">
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>
-                    </svg>
-                </div>
-                <div class="csw-savings-text">
-                    <span class="csw-savings-label"><?php echo esc_html( $savings_label ); ?></span>
-                    <span class="csw-savings-amount">
-                        <?php
-                        $max_diff = 0;
-                        foreach ( $comparison['competitors'] as $comp ) {
-                            if ( $comp['price_difference'] > $max_diff ) {
-                                $max_diff = $comp['price_difference'];
-                            }
-                        }
-                        printf(
-                            /* translators: 1: savings amount, 2: savings percentage */
-                            esc_html__( 'up to %1$s (%2$s%%)', 'competitor-spy-widget' ),
-                            wp_kses_post( wc_price( $max_diff ) ),
-                            esc_html( number_format( $comparison['best_savings'], 0 ) )
-                        );
-                        ?>
-                    </span>
-                </div>
-            </div>
-            <?php endif; ?>
-
-            <!-- Trust Footer -->
-            <div class="csw-widget-footer">
-                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="10"/>
-                    <polyline points="12 6 12 12 16 14"/>
-                </svg>
-                <span class="csw-last-checked">
-                    <?php esc_html_e( 'Prices verified recently', 'competitor-spy-widget' ); ?>
-                </span>
-            </div>
-        </div>
-        <?php
-    }
-
-    /**
-     * AJAX handler for lazy-loaded widget.
-     */
-    public static function ajax_get_widget() {
-        check_ajax_referer( 'csw_widget_nonce', 'nonce' );
-
-        $product_id = isset( $_POST['product_id'] ) ? absint( $_POST['product_id'] ) : 0;
-
-        if ( ! $product_id ) {
-            wp_send_json_error( array( 'message' => 'Invalid product ID' ) );
-        }
-
-        $comparison = CSW_Price_Engine::get_comparison( $product_id );
-
-        if ( ! $comparison || ! $comparison['show_widget'] ) {
-            wp_send_json_success( array(
-                'show'   => false,
-                'html'   => '',
-                'reason' => 'no_data',
-            ) );
-        }
-
-        // Render to buffer using a static method to avoid constructor side effects
-        ob_start();
-        self::static_render_comparison_html( $comparison );
-        $html = ob_get_clean();
-
-        wp_send_json_success( array(
-            'show'       => true,
-            'html'       => $html,
-            'comparison' => $comparison,
-        ) );
-    }
-
-    /**
-     * Static render helper for AJAX context (avoids constructor re-init).
-     *
-     * @param array $comparison Comparison data.
-     */
-    private static function static_render_comparison_html( $comparison ) {
+    public static function render_comparison_html( $comparison ) {
         $widget_style  = CSW_Settings::get( 'widget_style', 'modern' );
         $show_savings  = '1' === CSW_Settings::get( 'show_savings', '1' );
         $show_logos    = '1' === CSW_Settings::get( 'show_competitor_logo', '1' );
@@ -404,7 +247,13 @@ class CSW_Widget_Display {
                             <span class="csw-store-name"><?php echo esc_html( $competitor['name'] ); ?></span>
                             <?php if ( $competitor['is_cheaper'] && $show_savings ) : ?>
                             <span class="csw-savings-tag">
-                                <?php printf( esc_html__( '%s%% more expensive', 'competitor-spy-widget' ), esc_html( number_format( $competitor['savings_percent'], 0 ) ) ); ?>
+                                <?php
+                                printf(
+                                    /* translators: %s: savings percentage */
+                                    esc_html__( '%s%% more expensive', 'competitor-spy-widget' ),
+                                    esc_html( number_format( $competitor['savings_percent'], 0 ) )
+                                );
+                                ?>
                             </span>
                             <?php endif; ?>
                         </div>
@@ -436,6 +285,7 @@ class CSW_Widget_Display {
                             }
                         }
                         printf(
+                            /* translators: 1: savings amount, 2: savings percentage */
                             esc_html__( 'up to %1$s (%2$s%%)', 'competitor-spy-widget' ),
                             wp_kses_post( wc_price( $max_diff ) ),
                             esc_html( number_format( $comparison['best_savings'], 0 ) )
@@ -458,6 +308,40 @@ class CSW_Widget_Display {
     }
 
     /**
+     * AJAX handler for lazy-loaded widget.
+     */
+    public static function ajax_get_widget() {
+        check_ajax_referer( 'csw_widget_nonce', 'nonce' );
+
+        $product_id = isset( $_POST['product_id'] ) ? absint( $_POST['product_id'] ) : 0;
+
+        if ( ! $product_id ) {
+            wp_send_json_error( array( 'message' => 'Invalid product ID' ) );
+        }
+
+        $comparison = CSW_Price_Engine::get_comparison( $product_id );
+
+        if ( ! $comparison || ! $comparison['show_widget'] ) {
+            wp_send_json_success( array(
+                'show'   => false,
+                'html'   => '',
+                'reason' => 'no_data',
+            ) );
+        }
+
+        // Render to buffer
+        ob_start();
+        self::render_comparison_html( $comparison );
+        $html = ob_get_clean();
+
+        wp_send_json_success( array(
+            'show'       => true,
+            'html'       => $html,
+            'comparison' => $comparison,
+        ) );
+    }
+
+    /**
      * AJAX handler for tracking analytics events.
      */
     public static function ajax_track_event() {
@@ -477,7 +361,6 @@ class CSW_Widget_Display {
             wp_send_json_error( array( 'message' => 'Invalid request' ) );
         }
 
-        // Get anonymized visitor data
         $ip_raw = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
         $ip_hash = hash( 'sha256', $ip_raw . wp_salt() );
 
@@ -518,16 +401,3 @@ class CSW_Widget_Display {
         return 'desktop';
     }
 }
-
-// Register AJAX handlers (always available for both admin and frontend AJAX)
-add_action( 'wp_ajax_csw_get_widget', array( 'CSW_Widget_Display', 'ajax_get_widget' ) );
-add_action( 'wp_ajax_nopriv_csw_get_widget', array( 'CSW_Widget_Display', 'ajax_get_widget' ) );
-add_action( 'wp_ajax_csw_track_event', array( 'CSW_Widget_Display', 'ajax_track_event' ) );
-add_action( 'wp_ajax_nopriv_csw_track_event', array( 'CSW_Widget_Display', 'ajax_track_event' ) );
-
-// Initialize widget display on frontend via wp_loaded to ensure WooCommerce is ready
-add_action( 'wp_loaded', function() {
-    if ( ! is_admin() || wp_doing_ajax() ) {
-        new CSW_Widget_Display();
-    }
-} );

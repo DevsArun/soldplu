@@ -28,6 +28,7 @@ class CSW_Admin_Ajax {
         add_action( 'wp_ajax_csw_save_price', array( $this, 'save_price' ) );
         add_action( 'wp_ajax_csw_delete_price', array( $this, 'delete_price' ) );
         add_action( 'wp_ajax_csw_bulk_import_prices', array( $this, 'bulk_import_prices' ) );
+        add_action( 'wp_ajax_csw_bulk_save_prices', array( $this, 'bulk_save_prices' ) );
 
         // Settings actions
         add_action( 'wp_ajax_csw_save_settings', array( $this, 'save_settings' ) );
@@ -230,6 +231,130 @@ class CSW_Admin_Ajax {
         }
 
         wp_send_json_success( array( 'message' => __( 'Price deleted successfully.', 'competitor-spy-widget' ) ) );
+    }
+
+    /**
+     * Bulk save prices from the quick-add grid (no CSV, no API).
+     * Auto-creates competitors by name.
+     */
+    public function bulk_save_prices() {
+        check_ajax_referer( 'csw_admin_nonce', 'nonce' );
+
+        if ( ! CSW_Security::can( 'manage_prices' ) ) {
+            wp_send_json_error( array( 'message' => __( 'Permission denied.', 'competitor-spy-widget' ) ) );
+        }
+
+        $entries = isset( $_POST['entries'] ) ? wp_unslash( $_POST['entries'] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+
+        if ( empty( $entries ) || ! is_array( $entries ) ) {
+            wp_send_json_error( array( 'message' => __( 'No entries to save.', 'competitor-spy-widget' ) ) );
+        }
+
+        $saved = 0;
+        $errors = 0;
+
+        foreach ( $entries as $entry ) {
+            $product_id      = isset( $entry['product_id'] ) ? absint( $entry['product_id'] ) : 0;
+            $competitor_name = isset( $entry['competitor_name'] ) ? sanitize_text_field( $entry['competitor_name'] ) : '';
+            $competitor_price = isset( $entry['competitor_price'] ) ? floatval( $entry['competitor_price'] ) : 0;
+            $competitor_url  = isset( $entry['competitor_url'] ) ? esc_url_raw( $entry['competitor_url'] ) : '';
+
+            if ( ! $product_id || empty( $competitor_name ) || $competitor_price <= 0 ) {
+                $errors++;
+                continue;
+            }
+
+            $product = wc_get_product( $product_id );
+            if ( ! $product ) {
+                $errors++;
+                continue;
+            }
+
+            // Find or create competitor by name
+            $competitor_id = $this->find_or_create_competitor_by_name( $competitor_name );
+            if ( ! $competitor_id ) {
+                $errors++;
+                continue;
+            }
+
+            $our_price = CSW_Price_Engine::get_product_price( $product );
+
+            $result = CSW_Database::upsert_price( array(
+                'product_id'       => $product_id,
+                'competitor_id'    => $competitor_id,
+                'competitor_price' => $competitor_price,
+                'our_price'        => $our_price,
+                'competitor_url'   => $competitor_url,
+                'source'           => 'bulk_manual',
+            ) );
+
+            if ( $result ) {
+                $saved++;
+                CSW_Database::record_price_history( $product_id, $competitor_id, $competitor_price, $our_price );
+                CSW_Cache::delete_product_comparison( $product_id );
+            } else {
+                $errors++;
+            }
+        }
+
+        wp_send_json_success( array(
+            'message' => sprintf(
+                /* translators: 1: saved count, 2: error count */
+                __( '%1$d prices saved successfully. %2$d skipped.', 'competitor-spy-widget' ),
+                $saved,
+                $errors
+            ),
+            'saved'  => $saved,
+            'errors' => $errors,
+        ) );
+    }
+
+    /**
+     * Find or create a competitor by name (used by bulk operations).
+     *
+     * @param string $name Competitor name.
+     * @return int|false Competitor ID or false.
+     */
+    private function find_or_create_competitor_by_name( $name ) {
+        global $wpdb;
+        $table = $wpdb->prefix . 'csw_competitors';
+
+        // Find existing (case-insensitive)
+        $existing = $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT id FROM {$table} WHERE LOWER(name) = LOWER(%s) LIMIT 1", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+                $name
+            )
+        );
+
+        if ( $existing ) {
+            return (int) $existing;
+        }
+
+        // Auto-create
+        $slug = sanitize_title( $name );
+        $known_logos = array(
+            'amazon'    => CSW_PLUGIN_URL . 'public/assets/images/competitors/amazon.svg',
+            'walmart'   => CSW_PLUGIN_URL . 'public/assets/images/competitors/walmart.svg',
+            'ebay'      => CSW_PLUGIN_URL . 'public/assets/images/competitors/ebay.svg',
+            'target'    => CSW_PLUGIN_URL . 'public/assets/images/competitors/target.svg',
+            'best-buy'  => CSW_PLUGIN_URL . 'public/assets/images/competitors/bestbuy.svg',
+            'bestbuy'   => CSW_PLUGIN_URL . 'public/assets/images/competitors/bestbuy.svg',
+        );
+
+        $logo_url = isset( $known_logos[ $slug ] ) ? $known_logos[ $slug ] : '';
+
+        $id = CSW_Database::insert_competitor( array(
+            'name'        => $name,
+            'slug'        => $slug,
+            'website_url' => '',
+            'logo_url'    => $logo_url,
+            'api_type'    => 'manual',
+            'is_active'   => 1,
+            'priority'    => 0,
+        ) );
+
+        return $id ? $id : false;
     }
 
     /**
