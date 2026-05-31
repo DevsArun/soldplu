@@ -23,7 +23,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 // Plugin constants
-define( 'CSW_VERSION', '1.0.0' );
+define( 'CSW_VERSION', '2.0.0' );
 define( 'CSW_PLUGIN_FILE', __FILE__ );
 define( 'CSW_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'CSW_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -88,12 +88,15 @@ final class Competitor_Spy_Widget {
         // Core includes
         require_once CSW_PLUGIN_DIR . 'includes/class-csw-database.php';
         require_once CSW_PLUGIN_DIR . 'includes/class-csw-settings.php';
+        require_once CSW_PLUGIN_DIR . 'includes/class-csw-license.php';
         require_once CSW_PLUGIN_DIR . 'includes/class-csw-competitor.php';
         require_once CSW_PLUGIN_DIR . 'includes/class-csw-price-engine.php';
         require_once CSW_PLUGIN_DIR . 'includes/class-csw-price-fetcher.php';
+        require_once CSW_PLUGIN_DIR . 'includes/class-csw-optimizer.php';
         require_once CSW_PLUGIN_DIR . 'includes/class-csw-cache.php';
         require_once CSW_PLUGIN_DIR . 'includes/class-csw-widget-display.php';
         require_once CSW_PLUGIN_DIR . 'includes/class-csw-analytics.php';
+        require_once CSW_PLUGIN_DIR . 'includes/class-csw-notifications.php';
         require_once CSW_PLUGIN_DIR . 'includes/class-csw-cron.php';
         require_once CSW_PLUGIN_DIR . 'includes/class-csw-security.php';
         require_once CSW_PLUGIN_DIR . 'includes/class-csw-api.php';

@@ -48,6 +48,11 @@ class CSW_Admin_Ajax {
         // Dashboard
         add_action( 'wp_ajax_csw_get_dashboard_data', array( $this, 'get_dashboard_data' ) );
         add_action( 'wp_ajax_csw_get_analytics_data', array( $this, 'get_analytics_data' ) );
+
+        // License
+        add_action( 'wp_ajax_csw_activate_license', array( $this, 'activate_license' ) );
+        add_action( 'wp_ajax_csw_deactivate_license', array( $this, 'deactivate_license' ) );
+        add_action( 'wp_ajax_csw_start_trial', array( $this, 'start_trial' ) );
     }
 
     /**
@@ -729,6 +734,64 @@ class CSW_Admin_Ajax {
         );
 
         wp_send_json_success( $data );
+    }
+    /**
+     * Activate a license key via AJAX.
+     */
+    public function activate_license() {
+        check_ajax_referer( 'csw_admin_nonce', 'nonce' );
+
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( array( 'message' => __( 'Permission denied.', 'competitor-spy-widget' ) ) );
+        }
+
+        $key = isset( $_POST['license_key'] ) ? sanitize_text_field( wp_unslash( $_POST['license_key'] ) ) : '';
+        $result = CSW_License::activate_license( $key );
+
+        if ( is_wp_error( $result ) ) {
+            wp_send_json_error( array( 'message' => $result->get_error_message() ) );
+        }
+
+        wp_send_json_success( $result );
+    }
+
+    /**
+     * Deactivate license via AJAX.
+     */
+    public function deactivate_license() {
+        check_ajax_referer( 'csw_admin_nonce', 'nonce' );
+
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( array( 'message' => __( 'Permission denied.', 'competitor-spy-widget' ) ) );
+        }
+
+        CSW_License::deactivate_license();
+        wp_send_json_success( array( 'message' => __( 'License deactivated.', 'competitor-spy-widget' ) ) );
+    }
+
+    /**
+     * Start free trial via AJAX.
+     */
+    public function start_trial() {
+        check_ajax_referer( 'csw_admin_nonce', 'nonce' );
+
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( array( 'message' => __( 'Permission denied.', 'competitor-spy-widget' ) ) );
+        }
+
+        $started = CSW_License::start_trial();
+
+        if ( ! $started ) {
+            wp_send_json_error( array( 'message' => __( 'Trial has already been used on this site.', 'competitor-spy-widget' ) ) );
+        }
+
+        CSW_Notifications::create( array(
+            'type'    => 'trial_started',
+            'title'   => '🎉 ' . __( 'Pro Trial Started!', 'competitor-spy-widget' ),
+            'message' => __( 'You have 14 days of full Pro access. Enjoy unlimited monitoring, alerts, and optimization.', 'competitor-spy-widget' ),
+        ) );
+
+        wp_send_json_success( array( 'message' => __( 'Trial started! All Pro features are now unlocked for 14 days.', 'competitor-spy-widget' ) ) );
     }
 }
 

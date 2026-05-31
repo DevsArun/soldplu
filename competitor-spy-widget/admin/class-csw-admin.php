@@ -100,6 +100,20 @@ class CSW_Admin {
             'csw-settings',
             array( $this, 'render_settings_page' )
         );
+
+        // Upgrade / Pricing
+        $upgrade_label = CSW_License::is_pro()
+            ? __( 'License', 'competitor-spy-widget' )
+            : '<span style="color: #4F46E5; font-weight: 600;">⚡ ' . __( 'Upgrade', 'competitor-spy-widget' ) . '</span>';
+
+        add_submenu_page(
+            'competitor-spy-widget',
+            __( 'Upgrade to Pro', 'competitor-spy-widget' ),
+            $upgrade_label,
+            'manage_options',
+            'csw-upgrade',
+            array( $this, 'render_upgrade_page' )
+        );
     }
 
     /**
@@ -247,6 +261,13 @@ class CSW_Admin {
      */
     public function render_settings_page() {
         include CSW_PLUGIN_DIR . 'admin/views/settings.php';
+    }
+
+    /**
+     * Render upgrade/pricing page.
+     */
+    public function render_upgrade_page() {
+        include CSW_PLUGIN_DIR . 'admin/views/upgrade.php';
     }
 
     /**
