@@ -38,6 +38,10 @@ class CSW_Admin_Ajax {
         // Onboarding
         add_action( 'wp_ajax_csw_complete_onboarding', array( $this, 'complete_onboarding' ) );
 
+        // Price fetcher
+        add_action( 'wp_ajax_csw_fetch_price_from_url', array( $this, 'fetch_price_from_url' ) );
+        add_action( 'wp_ajax_csw_refresh_all_prices', array( $this, 'refresh_all_prices' ) );
+
         // Search
         add_action( 'wp_ajax_csw_search_products', array( $this, 'search_products' ) );
 
@@ -547,6 +551,110 @@ class CSW_Admin_Ajax {
         wp_send_json_success( array(
             'message'  => __( 'Setup complete! Welcome to Competitor Spy Widget.', 'competitor-spy-widget' ),
             'redirect' => admin_url( 'admin.php?page=competitor-spy-widget' ),
+        ) );
+    }
+
+    /**
+     * Fetch price from a competitor URL via AJAX.
+     */
+    public function fetch_price_from_url() {
+        check_ajax_referer( 'csw_admin_nonce', 'nonce' );
+
+        if ( ! CSW_Security::can( 'manage_prices' ) ) {
+            wp_send_json_error( array( 'message' => __( 'Permission denied.', 'competitor-spy-widget' ) ) );
+        }
+
+        $url = isset( $_POST['url'] ) ? esc_url_raw( wp_unslash( $_POST['url'] ) ) : '';
+        $product_id = isset( $_POST['product_id'] ) ? absint( $_POST['product_id'] ) : 0;
+
+        if ( empty( $url ) ) {
+            wp_send_json_error( array( 'message' => __( 'Please provide a URL.', 'competitor-spy-widget' ) ) );
+        }
+
+        if ( ! CSW_Price_Fetcher::is_fetchable_url( $url ) ) {
+            wp_send_json_error( array( 'message' => __( 'Invalid URL. Please paste a valid product page link.', 'competitor-spy-widget' ) ) );
+        }
+
+        // Fetch the price
+        $result = CSW_Price_Fetcher::fetch_price( $url );
+
+        if ( is_wp_error( $result ) ) {
+            wp_send_json_error( array( 'message' => $result->get_error_message() ) );
+        }
+
+        // Format the response
+        $site_name = CSW_Price_Fetcher::get_site_display_name( $url );
+        $formatted_price = function_exists( 'wc_price' ) ? strip_tags( wc_price( $result['price'] ) ) : $result['currency'] . ' ' . number_format( $result['price'], 2 );
+
+        wp_send_json_success( array(
+            'price'           => $result['price'],
+            'currency'        => $result['currency'],
+            'title'           => $result['title'],
+            'site_name'       => $site_name,
+            'method'          => $result['method'],
+            'formatted_price' => $formatted_price,
+            'url'             => $url,
+        ) );
+    }
+
+    /**
+     * Refresh all monitored prices via AJAX.
+     */
+    public function refresh_all_prices() {
+        check_ajax_referer( 'csw_admin_nonce', 'nonce' );
+
+        if ( ! CSW_Security::can( 'manage_prices' ) ) {
+            wp_send_json_error( array( 'message' => __( 'Permission denied.', 'competitor-spy-widget' ) ) );
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'csw_prices';
+
+        // Get all entries with URLs
+        $entries = $wpdb->get_results(
+            "SELECT * FROM {$table} WHERE is_active = 1 AND competitor_url != '' ORDER BY last_checked ASC LIMIT 20" // phpcs:ignore
+        );
+
+        $updated = 0;
+        $failed = 0;
+
+        foreach ( $entries as $entry ) {
+            $result = CSW_Price_Fetcher::fetch_price( $entry->competitor_url );
+
+            if ( ! is_wp_error( $result ) && $result['price'] > 0 ) {
+                // Update price
+                $product = wc_get_product( $entry->product_id );
+                $our_price = $product ? CSW_Price_Engine::get_product_price( $product ) : (float) $entry->our_price;
+
+                CSW_Database::upsert_price( array(
+                    'product_id'       => $entry->product_id,
+                    'competitor_id'    => $entry->competitor_id,
+                    'competitor_price' => $result['price'],
+                    'our_price'        => $our_price,
+                    'competitor_url'   => $entry->competitor_url,
+                    'source'           => 'auto_fetch',
+                ) );
+
+                CSW_Database::record_price_history( $entry->product_id, $entry->competitor_id, $result['price'], $our_price );
+                CSW_Cache::delete_product_comparison( $entry->product_id );
+                $updated++;
+            } else {
+                $failed++;
+            }
+
+            // Polite delay
+            usleep( 500000 );
+        }
+
+        wp_send_json_success( array(
+            'message' => sprintf(
+                /* translators: 1: updated count, 2: failed count */
+                __( 'Refresh complete: %1$d updated, %2$d failed.', 'competitor-spy-widget' ),
+                $updated,
+                $failed
+            ),
+            'updated' => $updated,
+            'failed'  => $failed,
         ) );
     }
 

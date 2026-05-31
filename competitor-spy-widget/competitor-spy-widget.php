@@ -90,6 +90,7 @@ final class Competitor_Spy_Widget {
         require_once CSW_PLUGIN_DIR . 'includes/class-csw-settings.php';
         require_once CSW_PLUGIN_DIR . 'includes/class-csw-competitor.php';
         require_once CSW_PLUGIN_DIR . 'includes/class-csw-price-engine.php';
+        require_once CSW_PLUGIN_DIR . 'includes/class-csw-price-fetcher.php';
         require_once CSW_PLUGIN_DIR . 'includes/class-csw-cache.php';
         require_once CSW_PLUGIN_DIR . 'includes/class-csw-widget-display.php';
         require_once CSW_PLUGIN_DIR . 'includes/class-csw-analytics.php';
