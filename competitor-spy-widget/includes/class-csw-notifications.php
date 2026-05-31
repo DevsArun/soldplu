@@ -22,10 +22,6 @@ class CSW_Notifications {
      * Constructor.
      */
     public function __construct() {
-        if ( ! CSW_License::is_pro() ) {
-            return;
-        }
-
         add_action( 'admin_bar_menu', array( $this, 'add_admin_bar_notification' ), 100 );
         add_action( 'wp_ajax_csw_get_notifications', array( $this, 'ajax_get_notifications' ) );
         add_action( 'wp_ajax_csw_dismiss_notification', array( $this, 'ajax_dismiss_notification' ) );

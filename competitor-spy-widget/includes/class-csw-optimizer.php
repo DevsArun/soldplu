@@ -25,10 +25,6 @@ class CSW_Optimizer {
      * @return array Array of suggestions.
      */
     public static function get_product_suggestions( $product_id ) {
-        if ( ! CSW_License::is_pro() ) {
-            return array();
-        }
-
         $product = wc_get_product( $product_id );
         if ( ! $product ) {
             return array();
@@ -198,10 +194,6 @@ class CSW_Optimizer {
      * @return array
      */
     public static function get_all_suggestions( $limit = 20 ) {
-        if ( ! CSW_License::is_pro() ) {
-            return array();
-        }
-
         global $wpdb;
         $table = $wpdb->prefix . 'csw_prices';
 
