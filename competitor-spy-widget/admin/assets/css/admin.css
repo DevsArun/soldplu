@@ -423,3 +423,11 @@
 @media (max-width: 600px) {
     .csw-stats-4 { grid-template-columns: 1fr; }
 }
+
+
+
+/* WooCommerce Product Data Tab Icon */
+#woocommerce-product-data ul.wc-tabs li.csw_prices_options a::before {
+    content: '\f174';
+    font-family: dashicons;
+}

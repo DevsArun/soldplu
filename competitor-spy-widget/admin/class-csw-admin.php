@@ -259,7 +259,7 @@ class CSW_Admin {
         $tabs['csw_prices'] = array(
             'label'    => __( 'Competitor Prices', 'competitor-spy-widget' ),
             'target'   => 'csw_prices_panel',
-            'class'    => array(),
+            'class'    => array( 'show_if_simple', 'show_if_variable', 'show_if_external' ),
             'priority' => 80,
         );
 
