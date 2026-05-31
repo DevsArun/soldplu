@@ -21,13 +21,13 @@ $performance = CSW_Analytics::get_widget_performance();
             <h1 class="csw-page-title"><?php esc_html_e( 'Analytics', 'competitor-spy-widget' ); ?></h1>
             <p class="csw-page-subtitle"><?php esc_html_e( 'Track how the price comparison widget impacts your conversions.', 'competitor-spy-widget' ); ?></p>
         </div>
-        <div class="csw-header-right">
-            <div class="csw-period-selector">
+        <div class="csw-header-right" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <div class="csw-period-selector" style="display:flex;gap:4px;">
                 <a href="<?php echo esc_url( add_query_arg( 'period', '7days' ) ); ?>" class="csw-period-btn <?php echo '7days' === $period ? 'active' : ''; ?>"><?php esc_html_e( '7 Days', 'competitor-spy-widget' ); ?></a>
                 <a href="<?php echo esc_url( add_query_arg( 'period', '30days' ) ); ?>" class="csw-period-btn <?php echo '30days' === $period ? 'active' : ''; ?>"><?php esc_html_e( '30 Days', 'competitor-spy-widget' ); ?></a>
                 <a href="<?php echo esc_url( add_query_arg( 'period', '90days' ) ); ?>" class="csw-period-btn <?php echo '90days' === $period ? 'active' : ''; ?>"><?php esc_html_e( '90 Days', 'competitor-spy-widget' ); ?></a>
             </div>
-            <button type="button" class="csw-btn csw-btn-outline" id="csw-export-analytics">
+            <button type="button" class="csw-btn csw-btn-outline" id="csw-export-analytics" style="white-space:nowrap;">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
                     <polyline points="7 10 12 15 17 10"/>

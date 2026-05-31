@@ -336,12 +336,11 @@ class CSW_Admin {
      */
     public function on_price_change( $price, $product ) {
         if ( $product && $product->get_id() ) {
-            // Schedule price recalculation
-            as_schedule_single_action(
+            // Use WordPress built-in scheduled event instead of Action Scheduler
+            wp_schedule_single_event(
                 time() + 5,
                 'csw_recalculate_product_prices',
-                array( 'product_id' => $product->get_id() ),
-                'csw'
+                array( $product->get_id() )
             );
         }
     }
@@ -349,7 +348,9 @@ class CSW_Admin {
 
 // Handle scheduled price recalculation
 add_action( 'csw_recalculate_product_prices', function ( $product_id ) {
-    CSW_Price_Engine::on_product_price_change( $product_id );
+    if ( class_exists( 'CSW_Price_Engine' ) ) {
+        CSW_Price_Engine::on_product_price_change( $product_id );
+    }
 } );
 
 // Initialize admin
